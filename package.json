@@ -8,8 +8,12 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
-  },
-  "engines": {
+  "build": "echo 'No build step needed for functions'"
+"build": "echo 'No build step required'"
+
+},
+  
+ "engines": {
     "node": "22"
   },
   "main": "index.js",
