@@ -1,0 +1,114 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if the requester is the owner of the document
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Helper function to validate username format and length
+    function isValidUsername(username) {
+      return username is string &&
+             username.size() >= 3 &&
+             username.size() <= 20 &&
+             username.matches("^[a-zA-Z0-9_]+$");
+    }
+
+    // Helper function to validate the fields being updated
+    function isUpdatingAllowedFields(currentData, newData) {
+      // Fields that can be updated by the user directly
+      let mutableFields = ['displayName', 'bio', 'profilePictureUrl', 'username', 'privacySettings'];
+
+      // Check that no forbidden fields are being changed or added if they don't exist
+      let forbiddenFieldsUnchanged =
+        (!('dateJoined' in newData) || newData.dateJoined == currentData.dateJoined) &&
+        (!('email' in newData) || newData.email == currentData.email) && // Email changes are handled by Firebase Auth
+        (!('followersCount' in newData) || newData.followersCount == currentData.followersCount) &&
+        (!('followingCount' in newData) || newData.followingCount == currentData.followingCount) &&
+        (!('postsCount' in newData) || newData.postsCount == currentData.postsCount);
+
+      if (!forbiddenFieldsUnchanged) {
+        return false;
+      }
+
+      // Validate username if it's being changed
+      if ('username' in newData && newData.username != currentData.username) {
+        if (!isValidUsername(newData.username)) {
+          return false;
+        }
+      } else if ('username' in newData && newData.username == currentData.username) {
+        // Allow if username is same, no validation needed
+      } else if (!('username' in newData) && currentData.username != null) {
+         // if username field is not in newData, it means we are not trying to update it.
+         // But if currentData.username is null, and newData does not contain username, it's fine.
+         // If currentData.username is not null, and newData doesn't provide it, then it must retain old value.
+         // This is implicitly handled by newData.username == currentData.username in the request.resource.data vs resource.data
+         // The request.resource.data will contain all fields, not just the ones in the update payload from the client.
+         // So, if client doesn't send username, request.resource.data.username will be currentData.username
+      }
+
+
+      // Ensure lastUpdated is being set to the server timestamp
+      // This check must be present in the update payload from the client via the Cloud Function
+      if (!('lastUpdated' in newData) || newData.lastUpdated != request.time) {
+        return false;
+      }
+
+      // Validate types for other mutable fields if they are present in the update
+      if ('displayName' in newData && !(newData.displayName is string)) {
+        return false;
+      }
+      if ('bio' in newData && !(newData.bio is string)) {
+        return false;
+      }
+      if ('profilePictureUrl' in newData && !(newData.profilePictureUrl is string || newData.profilePictureUrl == null)) {
+        return false;
+      }
+      if ('privacySettings' in newData) {
+        if (!('emailVisibility' in newData.privacySettings && newData.privacySettings.emailVisibility is string && (newData.privacySettings.emailVisibility == 'private' || newData.privacySettings.emailVisibility == 'public')) ||
+            !('phoneVisibility' in newData.privacySettings && newData.privacySettings.phoneVisibility is string && (newData.privacySettings.phoneVisibility == 'private' || newData.privacySettings.phoneVisibility == 'public'))) {
+          return false;
+        }
+      }
+
+      // All checks passed
+      return true;
+    }
+
+    match /users/{userId} {
+      // GET:
+      // - Owner can get their full document.
+      // - Authenticated users can get any profile (Cloud Function will filter fields).
+      // - Unauthenticated users can get any profile (Cloud Function will filter fields).
+      // The getUserProfile Cloud Function is responsible for filtering which fields are returned.
+      allow get: if true;
+
+      // LIST:
+      // Disable listing all users to prevent data scraping and reduce unsecured data exposure.
+      // Specific queries for features like user search should be implemented via Cloud Functions
+      // with their own specific, narrower list rules if necessary.
+      allow list: if false;
+
+      // CREATE:
+      // User profile creation is handled by the onCreateUser Cloud Function (runs with admin privileges).
+      // Direct client-side creation of user documents is disallowed.
+      allow create: if false;
+
+      // UPDATE:
+      // Only the authenticated owner of the profile can update it.
+      // The isUpdatingAllowedFields function enforces which fields can be changed and their constraints.
+      // request.resource.data refers to the state of the document *after* the proposed update.
+      // resource.data refers to the state of the document *before* the proposed update.
+      allow update: if isOwner(userId) &&
+                       isUpdatingAllowedFields(resource.data, request.resource.data);
+
+      // DELETE:
+      // Disallow client-side deletion of user profiles.
+      // Deletions should be handled by a dedicated Cloud Function if this functionality is required,
+      // which can perform necessary cleanup (e.g., user's content).
+      allow delete: if false;
+    }
+  }
+}
