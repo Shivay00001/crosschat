@@ -1,50 +1,34 @@
-# Crosschat
+# crosschat
 
-Cross-platform real-time chat powered by Firebase Data Connect
+Real multi-room chat: FastAPI + WebSockets, message history in SQLite, and a
+minimal single-page frontend. No external services, no Firebase — everything
+runs from this repo.
 
-![Language](https://img.shields.io/badge/Language-HTML-blue)
-![Status](https://img.shields.io/badge/Status-Active-success)
-![License](https://img.shields.io/badge/License-MIT-green)
+## What it does
 
-## 🚀 Overview
+- `GET /` — single-page chat UI (pick a username, join/create rooms, live messages)
+- `WS /ws/{room}/{username}` — join a room; newcomers get history replay,
+  then live `join`/`message`/`leave` events
+- `GET /api/rooms` — rooms with message counts
+- `GET /api/rooms/{room}/history?limit=50` — persisted history
+- `GET /health`
 
-Welcome to the **Crosschat** repository. This project is built to deliver a robust and scalable solution tailored to modern development standards.
+Messages persist in SQLite (`crosschat.db`, override with `CROSSCHAT_DB`).
 
-## ✨ Features
+## Run
 
-- **High Performance:** Optimized for speed and efficiency.
-- **Scalable Architecture:** Designed to grow with your needs.
-- **Clean Codebase:** Follows best practices and industry standards.
-- **Secure by Default:** Engineered with security in mind.
+```bash
+pip install -r requirements.txt
+uvicorn main:app --port 8005
+# open http://localhost:8005 in two browser windows and chat
+```
 
-## 🛠️ Prerequisites
+## Tests
 
-Ensure you have the following installed in your environment before proceeding:
-- Appropriate runtime/compiler for `HTML`
-- Standard development tools
+```bash
+python -m pytest tests/ -q
+```
 
-## 📦 Installation
-
-Follow standard installation steps for `HTML` to set up the project locally:
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Shivay00001/crosschat.git
-   ```
-2. Navigate to the project directory:
-   ```bash
-   cd crosschat
-   ```
-3. Install dependencies according to the standard `HTML` ecosystem.
-
-## 💻 Usage
-
-Run the project using standard execution commands for `HTML`. Ensure all environment variables and configurations are set prior to execution.
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome! Feel free to check the issues page.
-
-## 📝 License
-
-This project is licensed under standard terms.
+Covers: two websocket clients exchanging messages in real time, history
+persisted to SQLite and replayed to newcomers, room isolation, REST history,
+invalid room names rejected, frontend served.

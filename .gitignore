@@ -1,2 +1,2 @@
-node_modules/
-*.local
+crosschat.db
+__pycache__/

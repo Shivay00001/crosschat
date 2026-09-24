@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>crosschat</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0;
+         display: flex; height: 100vh; }
+  #sidebar { width: 220px; background: #1e293b; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  #sidebar h2 { margin: 0 0 8px; font-size: 1.2rem; color: #818cf8; }
+  #roomlist { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .room { padding: 8px 10px; border-radius: 8px; cursor: pointer; background: transparent; border: none;
+          color: #e2e8f0; text-align: left; font-size: 0.95rem; }
+  .room:hover { background: #334155; }
+  .room.active { background: #4f46e5; }
+  #newroom { display: flex; gap: 6px; }
+  #main { flex: 1; display: flex; flex-direction: column; }
+  #header { padding: 12px 16px; background: #1e293b; border-bottom: 1px solid #334155;
+            display: flex; align-items: center; gap: 12px; }
+  #status { font-size: 0.8rem; color: #94a3b8; }
+  #status.on { color: #4ade80; }
+  #msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 70%; padding: 8px 12px; border-radius: 12px; background: #1e293b; }
+  .msg.me { align-self: flex-end; background: #4f46e5; }
+  .msg .who { font-size: 0.75rem; color: #a5b4fc; margin-bottom: 2px; }
+  .msg.me .who { color: #e0e7ff; }
+  .sys { align-self: center; font-size: 0.8rem; color: #64748b; }
+  #composer { display: flex; gap: 8px; padding: 12px 16px; background: #1e293b; }
+  input, button { font-size: 1rem; }
+  input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155;
+          background: #0f172a; color: #e2e8f0; }
+  button { padding: 10px 16px; border-radius: 8px; border: none; background: #4f46e5;
+           color: white; cursor: pointer; }
+  button:hover { background: #4338ca; }
+  #login { position: fixed; inset: 0; background: rgba(2,6,23,.9); display: flex;
+           align-items: center; justify-content: center; }
+  #loginbox { background: #1e293b; padding: 32px; border-radius: 12px; display: flex;
+              flex-direction: column; gap: 12px; min-width: 300px; }
+  #loginbox h1 { margin: 0; color: #818cf8; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h2>crosschat</h2>
+  <div id="roomlist"></div>
+  <div id="newroom">
+    <input id="newroomname" placeholder="new room" maxlength="40">
+    <button onclick="joinRoom(document.getElementById('newroomname').value)">+</button>
+  </div>
+</div>
+<div id="main">
+  <div id="header"><strong id="roomtitle">#general</strong><span id="status">● offline</span></div>
+  <div id="msgs"></div>
+  <div id="composer">
+    <input id="input" placeholder="Type a message…" autocomplete="off" maxlength="2000">
+    <button onclick="send()">Send</button>
+  </div>
+</div>
+<div id="login">
+  <div id="loginbox">
+    <h1>crosschat</h1>
+    <input id="username" placeholder="pick a username" maxlength="40">
+    <button onclick="enter()">Enter chat</button>
+  </div>
+</div>
+<script>
+let ws = null, me = "", room = "general";
+
+function esc(s){ return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function setStatus(on){ const el = document.getElementById("status");
+  el.textContent = on ? "● live" : "● offline"; el.className = on ? "on" : ""; }
+
+function addMsg(m){
+  const box = document.getElementById("msgs");
+  const d = document.createElement("div");
+  if (m.type === "join" || m.type === "leave") { d.className = "sys"; d.textContent = esc(m.text); }
+  else {
+    d.className = "msg" + (m.username === me ? " me" : "");
+    d.innerHTML = `<div class="who">${esc(m.username)}</div><div>${esc(m.text)}</div>`;
+  }
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+
+function connect(){
+  if (ws) ws.close();
+  setStatus(false);
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(room)}/${encodeURIComponent(me)}`);
+  ws.onopen = () => setStatus(true);
+  ws.onclose = () => { setStatus(false); setTimeout(connect, 3000); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "history") { document.getElementById("msgs").innerHTML = ""; m.messages.forEach(addMsg); }
+    else addMsg(m);
+  };
+}
+
+function joinRoom(r){
+  r = (r || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+  if (!r) return;
+  room = r;
+  document.getElementById("roomtitle").textContent = "#" + room;
+  document.getElementById("newroomname").value = "";
+  refreshRooms(); connect();
+}
+
+function send(){
+  const inp = document.getElementById("input");
+  if (ws && ws.readyState === 1 && inp.value.trim()) { ws.send(inp.value); inp.value = ""; }
+}
+document.getElementById("input").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+async function refreshRooms(){
+  try {
+    const r = await fetch("/api/rooms"); const j = await r.json();
+    const list = document.getElementById("roomlist"); list.innerHTML = "";
+    const names = new Set(j.rooms.map(x => x.room)); names.add(room); names.add("general");
+    [...names].forEach(n => {
+      const b = document.createElement("button");
+      b.className = "room" + (n === room ? " active" : "");
+      b.textContent = "#" + n; b.onclick = () => joinRoom(n);
+      list.appendChild(b);
+    });
+  } catch(e) {}
+}
+
+function enter(){
+  me = document.getElementById("username").value.trim().replace(/[^A-Za-z0-9_-]/g, "") || "anon";
+  document.getElementById("login").style.display = "none";
+  refreshRooms(); connect();
+}
+document.getElementById("username").addEventListener("keydown", e => { if (e.key === "Enter") enter(); });
+</script>
+</body>
+</html>
