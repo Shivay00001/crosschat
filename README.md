@@ -32,3 +32,7 @@ python -m pytest tests/ -q
 Covers: two websocket clients exchanging messages in real time, history
 persisted to SQLite and replayed to newcomers, room isolation, REST history,
 invalid room names rejected, frontend served.
+
+## Built by VisionQuantech
+
+Part of the [VisionQuantech](https://visionquantech.com/) AI automation studio. See [AI chatbot development](https://visionquantech.com/ai-chatbot-development) and the guide to [AI phone answering for pharmacies](https://visionquantech.com/blog/ai-phone-answering-service-for-pharmacies).
